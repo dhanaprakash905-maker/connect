@@ -1,0 +1,112 @@
+# STRICT ARCHITECTURE PROTOCOL
+You are an autonomous frontend developer agent. You are Creating / modifying a vanilla HTML/JS Serverless web application.
+
+**CRITICAL INSTRUCTION:** This project uses a Google Drive JSON file as a serverless database. You must NEVER blindly
+overwrite the cloud file. You must strictly adhere to the data architecture rules below. Do not modify the existing
+authentication, Google Drive sync functions, the `button:disabled` CSS state, or the `DOMContentLoaded` /
+`window.addEventListener` micro-interaction blocks. The app should be responsible and responsive and work on desktop and
+mobile devices.
+
+## 1. The Data Envelope Protocol
+All application data is stored in a single, global array called `databaseArray`. You must never push raw data directly into this array. Every single piece of data must be wrapped in this exact generic envelope:
+```javascript
+{
+    id: "unique_id_string", // e.g., "rec_" + Date.now().toString(36)
+    table: "your_target_table_name", // e.g., 'tasks', 'config_course', 'config_priority'
+    updatedAt: Date.now(), // Crucial for cloud conflict resolution. MUST be updated on every edit.
+    deleted: false, // Soft-delete flag
+    data: { } // ALL project-specific data goes inside this nested object.
+}
+1.B The Rule of Data Atomicity (CRITICAL)
+You must NEVER group lists, arrays, or collections of user-generated items into a single data envelope.
+
+Treat databaseArray like a strict, flat relational database.
+
+Every individual item (e.g., a single Course, a single Task, a single Status tag, a single Category) MUST be its own independent record with its own unique id and updatedAt timestamp.
+INCORRECT: Storing an array of courses inside one envelope: data: { courses: ['Math', 'Science'] }
+
+CORRECT: Storing two separate envelopes, one where data: { name: 'Math' } and another where data: { name: 'Science' }, both using table: 'config_course'.
+2. Reading Data
+To display data, never use the raw databaseArray. You must always filter it by the specific table name and ensure
+deleted is false.
+
+3. The Safe Mutation Cycle (Create, Update, Delete)
+Every time you write a function to Add, Edit, or Delete an item, you must finish the function by saving the local state and triggering the debounced cloud sync.
+
+INCORRECT (DO NOT DO THIS): autoUploadToCloud(); or pullAndMergeCloudData(); directly on mutation (this leads to excessive API calls and rate-limiting).
+
+CORRECT (MANDATORY): scheduleCloudSync(); (this schedules a debounced, queued sync).
+
+4. Soft Deletion Only
+You must NEVER use .splice() or .filter() to delete records. You must map the array, find the target ID, and set
+deleted: true.
+
+GOLDEN EXAMPLES FOR MUTATIONS
+How to Update an Item:
+
+JavaScript
+databaseArray = databaseArray.map(record =>
+record.id === targetId
+? {
+...record,
+updatedAt: Date.now(), // Must update outer timestamp
+data: { ...record.data, isPaid: true } // Update specific nested property
+}
+: record
+);
+updateDataState(databaseArray, true);
+scheduleCloudSync();
+How to Delete an Item:
+
+JavaScript
+databaseArray = databaseArray.map(record =>
+record.id === targetId ? { ...record, deleted: true, updatedAt: Date.now() } : record
+);
+updateDataState(databaseArray, true);
+scheduleCloudSync();
+5. Import Timestamp Update Protocol (MANDATORY)
+When importing a JSON backup, you must map over all imported records and set their `updatedAt` timestamp to `Date.now()`. This ensures the imported database wins the pull-and-merge sync conflict comparison against any recent cloud tombstones (e.g., from a "Clear Data" operation) while preserving tombstones for other non-imported records on other devices.
+Do not write new JavaScript for Authentication, Exporting, or Clearing data. Preserve their exact triggers and warning wrappers:
+* `<button id="authBtn" onclick="handleAuthClick()">`
+* `<button onclick="exportData()">`
+* `<button onclick="triggerImport()">`
+* `<input type="file" id="importFile" accept=".json" onchange="importData(event)">`
+* `<button onclick="clearAllData()">`
+          
+6. Unique Cloud & Local Sandboxing (MANDATORY)
+Every distinct product built with this boilerplate MUST use its own dedicated, project-specific files and storage keys to prevent separate apps from overwriting or merging each other's data in the browser or the cloud, and to ensure they do not automatically trigger Google Drive connection loops on first load.
+* **Cloud Sandboxing (Project-Specific Sync File):** Locate the string literal filename (e.g., `'todo_backup.json'`) inside both `pullAndMergeCloudData()` and `autoUploadToCloud()`. You MUST change this string to a unique, project-specific filename matching the target application's name (e.g., `'scholarpath_backup.json'`). Never allow two different apps to point to the same backup file name, as this causes silent cloud overwrites.
+* **Local Sandboxing:** Locate the string literal `'generic_app_data'` inside both `localStorage.getItem()` and `localStorage.setItem()`. Change this string to match the target application's name (e.g., `'scholarpath_local_data'`).
+* **Export Sandboxing:** Locate the string literal `'todo_export.json'` in the `exportData()` function and change it to match the application's name.
+* **Google Auth/Token Sandboxing (Project-Specific Auth Keys):** Locate the string literals `'has_linked_google'`, `'google_access_token'`, and `'google_token_expiry'` inside `localStorage.getItem()`, `localStorage.setItem()`, and `localStorage.removeItem()`. Prefix these keys with the application's target name (e.g., `'scholarpath_has_linked_google'`) to isolate the Google account connection state. This is critical to prevent other applications sharing the same origin or localhost port from triggering automatic Google Drive login/reconnect requests on initial load.
+
+7. Deterministic Default Initialization (MANDATORY)
+When populating default/pre-filled configuration choice items (e.g., Status, Priority, Courses, Grades) into the `databaseArray` on initial load:- Do NOT use random IDs. You MUST use deterministic index-based IDs (e.g., `tableName + '_' + idx`).- Do NOT use `Date.now()` as the `updatedAt` timestamp for these defaults. You MUST set `updatedAt: 0` as a baseline.
+This ensures that when a user syncs a second device, the IDs are identical and the cloud edits/deletions (which have higher timestamps) always override the default values, preventing duplicates and deleted items from returning.
+
+8. UI Rendering & Scroll Preservation (Sync Status Layout Rules)
+Every tab header bar or active view header MUST position the sync status badge (`#syncStatusIndicator` or `.sync-status-badge`) *inline* as the right-most element within the header container, never absolutely positioned.
+* All other controls, action buttons must be shifted to the left of the sync status badge.
+* The badge must support multi-line display (`white-space: pre-line`) to render the offline pause error text correctly, aligning and scaling neatly on mobile and desktop layout headers without overlapping other elements.
+* Before updating/redrawing the DOM elements during a render or view change, you MUST capture the current window/scroll container vertical scroll offset and restore it immediately after DOM update to prevent jarring viewport jumps.
+
+## 9. Preserving Defaults on Clear Data
+The clear all data function (`clearAllData()`) must NOT delete or soft-delete default pre-filled configuration choice items (e.g. Status, Priority) or settings (e.g. `ui_monday_start`). Instead, it must restore them to their default values, mark them as active (`deleted: false`), and update their timestamp to `now` (`updatedAt: Date.now()`) to propagate the restoration to the cloud database.
+
+## 10. Relative Sync Status Timer
+The sync status indicator should show relative time after successful cloud sync:
+* "✅ Synced Just Now" for the first 30 seconds.
+* "☁️ Last synced 1 min ago" from 30 seconds up to 2 minutes.
+* "☁️ Last synced X min ago" (where X is the number of elapsed minutes) from 2 minutes onwards.
+* On any subsequent edit or sync trigger, this timer should reset.
+* The status updates must be managed via a background interval, and state-preserving variables (`currentSyncStatusText`, `currentSyncStatusType`, `syncTimerId`, `lastSyncTime`) should be maintained to survive UI renders.
+
+## MANDATORY PRE-FLIGHT CHECKLIST
+Before finalizing any code in changes, internally verify:
+1. Did I update the Google Drive backup file name string in BOTH the pull and upload sync functions to be unique to this app?
+2. Did I use `pullAndMergeCloudData()` or `autoUploadToCloud()` directly after a data mutation? (If yes, rewrite it to use `scheduleCloudSync()`).
+3. Did I use `.splice()` or `.filter()` to delete a record? (If yes, rewrite it using the Soft Deletion Golden Example).
+4. Did I use deterministic IDs and a baseline timestamp of 0 for default config initialization?
+5. Did I ensure the sync status badge is placed inline at the extreme top right of the header bar (as the right-most element, with other controls shifted to its left) and configured to support multi-line formatting without absolute positioning?
+
+OUTPUT REQUIREMENT: When you present your Implementation Plan to the user, you MUST include a short "Checklist Verified" section at the end of your chat message, confirming you have explicitly checked all of these points.

@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Automated Cloud To-Do Checklist</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <meta name="theme-color" content="#4f46e5">
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://apis.google.com/js/api.js" async defer></script>
+
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --background: #f8fafc;
+            --surface: #ffffff;
+            --text: #0f172a;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            --success: #16a34a;
+            --danger: #dc2626;
+            --radius: 12px;
+            --shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--background);
+            color: var(--text);
+            line-height: 1.5;
+            padding: 2rem 1rem;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: var(--surface);
+            padding: 2rem;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+        }
+
+        .header-badges {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .metric-badge {
+            background-color: #fee2e2;
+            color: var(--danger);
+            padding: 0.5rem 1rem;
+            border-radius: 9999px;
+            font-weight: 600;
+            font-size: 0.875rem;
+        }
+
+        .sync-status {
+            font-size: 0.825rem;
+            font-weight: 500;
+            padding: 0.4rem 0.8rem;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            background-color: #f1f5f9;
+            color: var(--text-muted);
+            white-space: pre-line;
+            line-height: 1.4;
+            text-align: center;
+            justify-content: center;
+            border: 1px solid var(--border);
+        }
+
+        .sync-status.active {
+            background-color: #e0f2fe;
+            color: #0369a1;
+        }
+
+        .sync-status.error {
+            background-color: #fef2f2;
+            color: var(--danger);
+            cursor: pointer;
+        }
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .input-group {
+            flex: 1;
+            display: flex;
+            gap: 0.5rem;
+            min-width: 280px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 0.625rem 1rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 0.95rem;
+            outline: none;
+        }
+
+        input[type="text"]:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+
+        button {
+            padding: 0.625rem 1.25rem;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .btn-secondary {
+            background-color: var(--surface);
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background-color: var(--background);
+            color: var(--text);
+        }
+
+        .btn-danger {
+            background-color: transparent;
+            color: var(--text-muted);
+            padding: 0.375rem 0.75rem;
+        }
+
+        .btn-danger:hover {
+            color: var(--danger);
+            background-color: #fef2f2;
+        }
+
+        .data-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-left: auto;
+        }
+
+        #importFile {
+            display: none;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: wait;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+
+        <div id="appScreen">
+            <header>
+                <div>
+                    <h1>To-Do Checklist</h1>
+                </div>
+                <div class="header-badges">
+                    <button id="authBtn" class="btn-primary btn-sm" onclick="handleAuthClick()">Connect Drive</button>
+                    <div id="syncStatusIndicator" class="sync-status" style="display: none;"></div>
+                </div>
+            </header>
+
+            <div class="controls">
+
+                <div class="data-actions">
+                    <button class="btn-secondary" onclick="exportData()">Export</button>
+                    <button class="btn-secondary" onclick="triggerImport()">Import</button>
+                    <input type="file" id="importFile" accept=".json" onchange="importData(event)">
+                    <button class="btn-secondary btn-danger-text" onclick="clearAllData()">Clear Data</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // =========================================================================
+        // SECTION 1: TIMESTAMP-BASED DATA ARCHITECTURE
+        // =========================================================================
+        let databaseArray = []; // The generic container for all data envelopes
+        document.addEventListener('DOMContentLoaded', () => {
+            // INSTANT UI PRE-LOADER: Flip the button state before Google scripts load
+            if (localStorage.getItem('has_linked_google') === 'true') {
+                const authBtn = document.getElementById('authBtn');
+                authBtn.textContent = 'Syncing...';
+                authBtn.className = 'btn-secondary btn-sm';
+                authBtn.disabled = true; // Lock the button to prevent accidental clicks
+
+                setSyncStatus("Connecting to Drive...", "active");
+            }
+
+            // We use a new storage key to start with a fresh slate for the new architecture
+            const storedData = localStorage.getItem('generic_app_data');
+            if (storedData) {
+                try { databaseArray = JSON.parse(storedData); } catch (e) { databaseArray = []; }
+            }
+            render();
+        });
+
+        function updateDataState(newData, saveLocal = true) {
+            databaseArray = newData;
+            if (saveLocal) {
+                localStorage.setItem('generic_app_data', JSON.stringify(databaseArray));
+            }
+            render();
+        }
+
+        function exportData() {
+            if (!databaseArray.length) return alert("No data to export.");
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(databaseArray, null, 2));
+            const a = document.createElement('a'); a.setAttribute("href", dataStr); a.setAttribute("download", "todo_export.json"); a.click();
+        }
+        function triggerImport() {
+            if (confirm("Your current data will be replaced by the imported data. Do you want to continue?")) {
+                document.getElementById('importFile').click();
+            }
+        }
+        function importData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                try {
+                    const parsed = JSON.parse(e.target.result);
+                    if (Array.isArray(parsed)) {
+                        const now = Date.now();
+                        const importedData = parsed.map(item => Object.assign({}, item, { updatedAt: now }));
+                        const importedIds = new Set(importedData.map(item => item.id));
+
+                        // Mark all existing items not in the import file as deleted to wipe them from cloud
+                        const oldDataDeleted = databaseArray
+                            .filter(item => !importedIds.has(item.id))
+                            .map(item => Object.assign({}, item, { deleted: true, updatedAt: now }));
+
+                        databaseArray = [...importedData, ...oldDataDeleted];
+                        updateDataState(databaseArray, true);
+                        scheduleCloudSync();
+
+                        // Added success message confirmation
+                        alert("Data has been successfully imported! ✅");
+                    } else {
+                        alert("Import failed: JSON structure is incorrect.");
+                    }
+                } catch (err) { alert("Invalid JSON file."); }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+        function clearAllData() {
+            if (confirm("Are you sure you want to delete all local and cloud data? This cannot be undone.")) {
+                const now = Date.now();
+                databaseArray = databaseArray.map(r => {
+                    const isDefault = r.id && (r.id.startsWith('config_') || r.id === 'ui_monday_start');
+                    if (isDefault) {
+                        return { ...r, deleted: false, updatedAt: now };
+                    } else {
+                        return { ...r, deleted: true, updatedAt: now };
+                    }
+                });
+                localStorage.setItem('generic_app_data', JSON.stringify(databaseArray));
+                render();
+                scheduleCloudSync(true);
+                alert("All data cleared successfully.");
+            }
+        }
+        function escapeHTML(str) {
+            return str.replace(/[&<>'"]/g, t => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[t] || t));
+        }
+
+        // =========================================================================
+        // SECTION 2: TOKEN-CACHED REALTIME CLOUD SYNC ENGINE
+        // =========================================================================
+        const CLIENT_ID = '305632493984-9q07n0i677ku1btdds1scke8pam5ag3s.apps.googleusercontent.com';
+        const SCOPES = 'https://www.googleapis.com/auth/drive.appdata';
+
+        let tokenClient;
+        let gapiInited = false;
+        let gisimInited = false;
+        let accessToken = null;
+        let cloudFileId = null;
+        let silentRefreshTimeout = null;
+        let isRefreshingToken = false;
+        let needsManualReconnect = false;
+
+        let syncDebounceTimeout = null;
+        let isSyncingInProgress = false;
+        let hasPendingSyncRequest = false;
+        let hasUnsavedChanges = false;
+
+        let currentSyncStatusText = "";
+        let currentSyncStatusType = "";
+        let syncTimerId = null;
+        let lastSyncTime = null;
+
+        function updateRelativeSyncStatus() {
+            if (!lastSyncTime) return;
+            const el = document.getElementById('syncStatusIndicator');
+            if (!el) return;
+
+            const diff = Date.now() - lastSyncTime;
+            let newText = "";
+            if (diff < 30 * 1000) {
+                newText = "✅ Synced Just Now";
+            } else if (diff < 120 * 1000) {
+                newText = "☁️ Last synced 1 min ago";
+            } else {
+                const mins = Math.floor(diff / 60000);
+                newText = `☁️ Last synced ${mins} min ago`;
+            }
+
+            const currentText = el.innerText;
+            const isShowingSyncedStatus = currentText === "✅ Synced Just Now" || currentText.startsWith("☁️ Last synced");
+            if (isShowingSyncedStatus && currentText !== newText) {
+                el.innerText = newText;
+                currentSyncStatusText = newText;
+            }
+        }
+
+        function setSyncStatus(text, type = '', isNewSync = false) {
+            currentSyncStatusText = text;
+            currentSyncStatusType = type;
+            const el = document.getElementById('syncStatusIndicator');
+            if (el) {
+                if (!text) {
+                    // If the text is blank, hide the badge completely
+                    el.style.display = 'none';
+                } else {
+                    // If there is text, show the badge
+                    el.style.display = 'inline-flex';
+                    el.innerText = text;
+                    el.className = 'sync-status ' + type;
+
+                    if (type !== 'error') {
+                        el.style.cursor = 'default';
+                        el.onclick = null;
+                    } else {
+                        el.style.cursor = "pointer";
+                        el.onclick = () => {
+                            if (needsManualReconnect) {
+                                setSyncStatus("Connecting...", "active");
+                                tokenClient.requestAccessToken({ prompt: '' });
+                            } else {
+                                setSyncStatus("Syncing...", "active");
+                                pullAndMergeCloudData();
+                            }
+                        };
+                    }
+                }
+            }
+
+            if (isNewSync) {
+                lastSyncTime = Date.now();
+                if (!syncTimerId) {
+                    syncTimerId = setInterval(updateRelativeSyncStatus, 5000);
+                }
+            } else {
+                const isSyncedText = text === "✅ Synced Just Now" || text.startsWith("☁️ Last synced");
+                if (syncTimerId && !isSyncedText) {
+                    clearInterval(syncTimerId);
+                    syncTimerId = null;
+                    lastSyncTime = null;
+                }
+            }
+        }
+
+        function gapiLoaded() {
+            gapi.load('client', async () => {
+                await gapi.client.init({ discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'] });
+                gapiInited = true;
+                evaluateRoutingSession();
+            });
+        }
+
+        function gisLoaded() {
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: CLIENT_ID,
+                scope: SCOPES,
+                callback: async (resp) => {
+                    isRefreshingToken = false;
+                    if (silentRefreshTimeout) {
+                        clearTimeout(silentRefreshTimeout);
+                        silentRefreshTimeout = null;
+                    }
+
+                    if (resp.error !== undefined) {
+                        needsManualReconnect = true;
+                        triggerReconnectState();
+                        return;
+                    }
+
+                    needsManualReconnect = false;
+                    accessToken = resp.access_token;
+                    gapi.client.setToken({ access_token: accessToken });
+
+                    localStorage.setItem('google_access_token', accessToken);
+                    localStorage.setItem('google_token_expiry', (Date.now() + (resp.expires_in * 1000)).toString());
+                    localStorage.setItem('has_linked_google', 'true');
+
+                    updateAuthUI(true);
+                    setSyncStatus("✅ Synced Just Now", "active", true);
+
+                    await pullAndMergeCloudData();
+                },
+            });
+            gisimInited = true;
+            evaluateRoutingSession();
+        }
+        window.addEventListener('load', () => { gapiLoaded(); gisLoaded(); });
+
+        function evaluateRoutingSession() {
+            if (!gapiInited || !gisimInited) return;
+
+            if (localStorage.getItem('has_linked_google') === 'true') {
+                const cachedToken = localStorage.getItem('google_access_token');
+                const expiry = parseInt(localStorage.getItem('google_token_expiry') || '0');
+
+                if (cachedToken && Date.now() < expiry) {
+                    // TOKEN IS VALID
+                    accessToken = cachedToken;
+                    gapi.client.setToken({ access_token: accessToken });
+                    updateAuthUI(true);
+                    setSyncStatus("✅ Synced Just Now", "active", true);
+                    pullAndMergeCloudData();
+                } else {
+                    if (isRefreshingToken) return;
+
+                    // TOKEN EXPIRED
+                    // 1. Detect if the user is on a mobile device (via user agent or screen size)
+                    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768;
+
+                    updateAuthUI(true);
+
+                    if (isMobile) {
+                        // 2. INSTANT FALLBACK FOR MOBILE
+                        needsManualReconnect = true;
+                        triggerReconnectState();
+                    } else {
+                        // 3. DESKTOP ONLY: Attempt the silent refresh
+                        isRefreshingToken = true;
+                        setSyncStatus("Reconnecting...", "active");
+
+                        silentRefreshTimeout = setTimeout(() => {
+                            console.warn("Silent refresh timed out. Forcing manual reconnect button.");
+                            isRefreshingToken = false;
+                            needsManualReconnect = true;
+                            triggerReconnectState();
+                        }, 4000);
+
+                        tokenClient.requestAccessToken({ prompt: 'none' });
+                    }
+                }
+            } else {
+                // NEVER CONNECTED OR DISCONNECTED
+                updateAuthUI(false);
+            }
+        }
+        function triggerReconnectState() {
+            setSyncStatus("Session Expired - Tap to Reconnect 🔄", "error");
+        }
+
+        function handleAuthFailure() {
+            localStorage.removeItem('google_access_token');
+            updateAuthUI(false);
+        }
+        function updateAuthUI(isConnected) {
+            const authBtn = document.getElementById('authBtn');
+            authBtn.disabled = false; // Always unlock the button once state resolves
+
+            if (isConnected) {
+                authBtn.textContent = 'Disconnect';
+                authBtn.className = 'btn-secondary btn-sm btn-danger-text';
+            } else {
+                authBtn.textContent = 'Connect Drive';
+                authBtn.className = 'btn-primary btn-sm';
+                setSyncStatus("", "");
+            }
+        }
+
+        function handleAuthClick() {
+            if (localStorage.getItem('has_linked_google') === 'true') {
+                // DISCONNECT LOGIC (Local Device Only)
+
+                // We simply clear the token locally. 
+                // We DO NOT use google.accounts.oauth2.revoke() here, 
+                // otherwise it will break the connection for your mobile phone too!
+                accessToken = null;
+                isRefreshingToken = false;
+                needsManualReconnect = false;
+
+                // Wipe the browser memory for this specific device
+                localStorage.setItem('has_linked_google', 'false');
+                localStorage.removeItem('google_access_token');
+                localStorage.removeItem('google_token_expiry');
+
+                // Update the UI to show disconnected state
+                updateAuthUI(false);
+
+                render();
+
+            } else {
+                // CONNECT LOGIC
+                if (!gapiInited || !gisimInited) return alert("System booting. Please retry in a moment.");
+                setSyncStatus("Connecting...", "active");
+                tokenClient.requestAccessToken({ prompt: 'select_account consent' });
+            }
+        }
+        async function pullAndMergeCloudData() {
+            if (!accessToken) return false;
+            try {
+                const response = await gapi.client.drive.files.list({
+                    q: "name = 'todo_backup.json' and trashed = false",
+                    spaces: 'appDataFolder',
+                    fields: 'files(id, name)'
+                });
+
+                const files = response.result.files;
+                cloudFileId = files.length > 0 ? files[0].id : null;
+
+                let success = true;
+                if (cloudFileId) {
+                    const fileData = await gapi.client.drive.files.get({ fileId: cloudFileId, alt: 'media' });
+                    const remotePayload = fileData.result;
+
+                    // Look for the generic "records" array
+                    if (remotePayload && remotePayload.records) {
+                        const cloudRecords = remotePayload.records;
+                        const mergedMap = new Map();
+
+                        // 1. Load Cloud Envelopes into the Map
+                        cloudRecords.forEach(item => mergedMap.set(item.id, item));
+
+                        // 2. Compare Local Envelopes vs Cloud Envelopes item-by-item
+                        let localHasNewerEdits = false;
+                        databaseArray.forEach(localItem => {
+                            const cloudItem = mergedMap.get(localItem.id);
+                            // If local item is newer, or it doesn't exist in the cloud yet, local wins
+                            if (!cloudItem || (localItem.updatedAt > (cloudItem.updatedAt || 0))) {
+                                mergedMap.set(localItem.id, localItem);
+                                localHasNewerEdits = true;
+                            }
+                        });
+
+                        // Update our screen with the perfectly merged data
+                        const finalMergedRecords = Array.from(mergedMap.values());
+                        updateDataState(finalMergedRecords, true);
+
+                        if (localHasNewerEdits) {
+                            success = await autoUploadToCloud();
+                        }
+                    }
+                } else {
+                    success = await autoUploadToCloud();
+                }
+                if (success) {
+                    setSyncStatus("✅ Synced Just Now", "active", true);
+                    return true;
+                }
+                return false;
+            } catch (err) {
+                console.error("Sync pull execution exception:", err);
+                const msg = !navigator.onLine ? "Sync paused - Offline\nTap to reconnect" : "Sync Paused ⚠️";
+                setSyncStatus(msg, "error");
+                if (err.status === 401) {
+                    // Force expiration flag and trigger a silent refresh instead of logging out
+                    localStorage.setItem('google_token_expiry', '0');
+                    evaluateRoutingSession();
+                }
+                return false;
+            }
+        }
+
+        async function autoUploadToCloud() {
+            if (localStorage.getItem('has_linked_google') !== 'true' || !accessToken) return false;
+            setSyncStatus("Saving to Cloud...", "active");
+
+            try {
+                if (!cloudFileId) {
+                    const response = await gapi.client.drive.files.list({
+                        q: "name = 'todo_backup.json' and trashed = false",
+                        spaces: 'appDataFolder',
+                        fields: 'files(id)'
+                    });
+                    if (response.result.files.length > 0) {
+                        cloudFileId = response.result.files[0].id;
+                    } else {
+                        const metaResp = await gapi.client.drive.files.create({
+                            resource: { name: 'todo_backup.json', parents: ['appDataFolder'] },
+                            fields: 'id'
+                        });
+                        cloudFileId = metaResp.result.id;
+                    }
+                }
+
+                // Upload the generic database array
+                const payload = { records: databaseArray };
+
+                await gapi.client.request({
+                    path: `https://www.googleapis.com/upload/drive/v3/files/${cloudFileId}?uploadType=media`,
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                setSyncStatus("✅ Synced Just Now", "active", true);
+                return true;
+            } catch (err) {
+                console.error("Cloud engine commit intercept:", err);
+                const msg = !navigator.onLine ? "Sync paused - Offline\nTap to reconnect" : "Sync Paused ⚠️";
+                setSyncStatus(msg, "error");
+                if (err.status === 401) {
+                    // Force expiration flag and trigger a silent refresh instead of logging out
+                    localStorage.setItem('google_token_expiry', '0');
+                    evaluateRoutingSession();
+                }
+                return false;
+            }
+        }
+
+        function scheduleCloudSync(immediate = false) {
+            if (localStorage.getItem('has_linked_google') !== 'true' || !accessToken) return;
+
+            hasUnsavedChanges = true;
+            setSyncStatus("Saving to Cloud...", "active");
+
+            if (syncDebounceTimeout) {
+                clearTimeout(syncDebounceTimeout);
+                syncDebounceTimeout = null;
+            }
+
+            if (immediate) {
+                triggerSyncNow();
+            } else {
+                syncDebounceTimeout = setTimeout(triggerSyncNow, 3000);
+            }
+        }
+
+        async function triggerSyncNow() {
+            if (syncDebounceTimeout) {
+                clearTimeout(syncDebounceTimeout);
+                syncDebounceTimeout = null;
+            }
+
+            if (isSyncingInProgress) {
+                hasPendingSyncRequest = true;
+                return;
+            }
+
+            isSyncingInProgress = true;
+            hasPendingSyncRequest = false;
+
+            try {
+                const success = await pullAndMergeCloudData();
+                if (success) {
+                    hasUnsavedChanges = false;
+                }
+            } catch (err) {
+                console.error("Sync execution error during triggerSyncNow:", err);
+            } finally {
+                isSyncingInProgress = false;
+                if (hasPendingSyncRequest) {
+                    triggerSyncNow();
+                }
+            }
+        }
+        // =========================================================================
+        // SECTION 3: MICRO-INTERACTION SYNC ENGINE (OPTION 4)
+        // =========================================================================
+
+        // Set the initial clock so it doesn't double-trigger on first load
+        let lastInteractionSyncTime = Date.now();
+        const SYNC_COOLDOWN_MS = 300000;
+
+        function handleMicroInteraction() {
+            // Stop completely if the user is not logged in or the token is missing
+            if (localStorage.getItem('has_linked_google') !== 'true' || !accessToken) return;
+            if (isRefreshingToken || needsManualReconnect) return;
+
+            // NEW CODE: Check if the token expired while the laptop was asleep
+            const expiry = parseInt(localStorage.getItem('google_token_expiry') || '0');
+            if (Date.now() >= expiry) {
+                evaluateRoutingSession(); // Trigger the silent refresh
+                return; // Stop the sync attempt so it doesn't crash
+            }
+
+            const now = Date.now();
+            if (now - lastInteractionSyncTime > SYNC_COOLDOWN_MS) {
+                lastInteractionSyncTime = now; // Reset the clock immediately
+                if (!isSyncingInProgress && !syncDebounceTimeout) {
+                    setSyncStatus("Checking...", "active");
+                    triggerSyncNow();
+                }
+            }
+        }
+
+        // Listeners for physical user presence and tab focus
+        window.addEventListener('mousemove', handleMicroInteraction);
+        window.addEventListener('keydown', handleMicroInteraction);
+        window.addEventListener('touchstart', handleMicroInteraction, { passive: true });
+        window.addEventListener('focus', handleMicroInteraction);
+
+        window.addEventListener('beforeunload', (e) => {
+            if (hasUnsavedChanges) {
+                e.preventDefault();
+                e.returnValue = 'You have unsaved changes syncing to the cloud. Are you sure you want to leave?';
+            }
+        });
+    </script>
+</body>
+
+</html>
